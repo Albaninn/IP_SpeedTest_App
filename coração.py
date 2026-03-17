@@ -13,7 +13,7 @@ from collections import deque
 class AppRede(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Lucas - MultiPing Pro (Auto-Equalize)")
+        self.title("Lucas - MultiPing Pro (Smart Proportions)")
         self.geometry("1200x800")
         
         self.config_file = "hosts_config.json"
@@ -21,14 +21,13 @@ class AppRede(ctk.CTk):
         self.dados_pings = {h["ip"]: deque([(0, False)] * 60, maxlen=60) for h in self.hosts}
         self.widgets_graficos = {}
 
-        # Layout
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         # Sidebar
         self.sidebar = ctk.CTkFrame(self, width=200)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        ctk.CTkLabel(self.sidebar, text="Config", font=("Arial", 16, "bold")).pack(pady=10)
+        ctk.CTkLabel(self.sidebar, text="Menu", font=("Arial", 16, "bold")).pack(pady=10)
         ctk.CTkButton(self.sidebar, text="+ Add Host", command=self.janela_adicionar).pack(pady=5, padx=10)
         self.btn_speed = ctk.CTkButton(self.sidebar, text="Speedtest", command=self.iniciar_speedtest)
         self.btn_speed.pack(pady=20, padx=10)
@@ -36,28 +35,23 @@ class AppRede(ctk.CTk):
         self.lbl_speed.pack()
 
         # Área de Trabalho
-        self.main_pane = tk.PanedWindow(self, orient=tk.VERTICAL, bg="#1a1a1a", sashwidth=6, sashrelief=tk.RAISED)
+        self.main_pane = tk.PanedWindow(self, orient=tk.VERTICAL, bg="#1a1a1a", sashwidth=8, sashrelief=tk.RAISED)
         self.main_pane.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
+        # Espaço de folga superior
         self.topo_vazio = tk.Frame(self.main_pane, bg="#1a1a1a")
-        self.main_pane.add(self.topo_vazio, height=100) # Espaço de folga inicial pequeno
+        self.main_pane.add(self.topo_vazio, height=50) # Começa pequeno no topo
 
+        # Container de Gráficos
         self.container_graficos = tk.Frame(self.main_pane, bg="#242424")
         self.main_pane.add(self.container_graficos)
 
-        self.ips_pane = tk.PanedWindow(self.container_graficos, orient=tk.VERTICAL, bg="#242424", sashwidth=4)
+        # PanedWindow dos IPs
+        self.ips_pane = tk.PanedWindow(self.container_graficos, orient=tk.VERTICAL, bg="#242424", sashwidth=4, sashrelief=tk.FLAT)
         self.ips_pane.pack(fill="both", expand=True)
 
         self.atualizar_lista_graficos()
         threading.Thread(target=self.loop_monitoramento, daemon=True).start()
-
-    def carregar_hosts(self):
-        if os.path.exists(self.config_file):
-            with open(self.config_file, "r") as f: return json.load(f)
-        return [{"ip": "8.8.8.8", "nome": "Google DNS"}]
-
-    def salvar_hosts(self):
-        with open(self.config_file, "w") as f: json.dump(self.hosts, f)
 
     def atualizar_lista_graficos(self):
         for child in self.ips_pane.winfo_children():
@@ -67,8 +61,9 @@ class AppRede(ctk.CTk):
         for host in self.hosts:
             ip, nome = host["ip"], host["nome"]
             container_host = tk.Frame(self.ips_pane, bg="#1e1e1e")
-            # Adicionamos sem definir height fixa aqui para permitir o cálculo proporcional depois
-            self.ips_pane.add(container_host, minsize=50)
+            
+            # Adicionamos com stretch="always" para que todos queiram crescer igual
+            self.ips_pane.add(container_host, minsize=40, stretch="always")
 
             header = tk.Frame(container_host, bg="#333", height=25)
             header.pack(fill="x", side="top")
@@ -92,16 +87,19 @@ class AppRede(ctk.CTk):
 
             self.widgets_graficos[ip] = {"line": line, "ax": ax, "canvas": canvas, "label": lbl, "vspans": []}
 
-        # --- A MÁGICA DA DIVISÃO IGUAL ---
-        # Forçamos a atualização da interface para saber o tamanho real do pane
+        # Forçar redistribuição proporcional inicial
+        self.rebalancear_graficos()
+
+    def rebalancear_graficos(self):
+        """ Divide o espaço disponível igualmente entre os gráficos existentes """
         self.update_idletasks()
-        altura_total = self.ips_pane.winfo_height()
+        altura_disponivel = self.ips_pane.winfo_height()
         quantidade = len(self.hosts)
         
         if quantidade > 0:
-            altura_cada = altura_total // quantidade
+            fatia = altura_disponivel // quantidade
             for child in self.ips_pane.winfo_children():
-                self.ips_pane.paneconfig(child, height=altura_cada)
+                self.ips_pane.paneconfig(child, height=fatia)
 
     def loop_monitoramento(self):
         while True:
@@ -129,12 +127,20 @@ class AppRede(ctk.CTk):
                         w["ax"].relim(); w["ax"].autoscale_view(); w["canvas"].draw_idle()
             time.sleep(1)
 
+    # --- Funções de suporte ---
+    def carregar_hosts(self):
+        if os.path.exists(self.config_file):
+            with open(self.config_file, "r") as f: return json.load(f)
+        return [{"ip": "8.8.8.8", "nome": "Google DNS"}]
+
+    def salvar_hosts(self):
+        with open(self.config_file, "w") as f: json.dump(self.hosts, f)
+
     def editar_nome_host(self, ip):
-        dialog = ctk.CTkInputDialog(text=f"Novo nome:", title="Editar")
-        novo = dialog.get_input()
-        if novo:
+        n = ctk.CTkInputDialog(text="Novo nome:", title="Editar").get_input()
+        if n:
             for h in self.hosts:
-                if h["ip"] == ip: h["nome"] = novo
+                if h["ip"] == ip: h["nome"] = n
             self.salvar_hosts(); self.atualizar_lista_graficos()
 
     def remover_host(self, ip):
