@@ -13,7 +13,7 @@ from collections import deque
 class AppRede(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Lucas - MultiPing Pro (Custom Layout)")
+        self.title("Lucas - MultiPing Pro (Auto-Equalize)")
         self.geometry("1200x800")
         
         self.config_file = "hosts_config.json"
@@ -21,36 +21,30 @@ class AppRede(ctk.CTk):
         self.dados_pings = {h["ip"]: deque([(0, False)] * 60, maxlen=60) for h in self.hosts}
         self.widgets_graficos = {}
 
-        # --- Grid Configuration ---
+        # Layout
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         # Sidebar
         self.sidebar = ctk.CTkFrame(self, width=200)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-
-        ctk.CTkLabel(self.sidebar, text="Menu", font=("Arial", 16, "bold")).pack(pady=10)
+        ctk.CTkLabel(self.sidebar, text="Config", font=("Arial", 16, "bold")).pack(pady=10)
         ctk.CTkButton(self.sidebar, text="+ Add Host", command=self.janela_adicionar).pack(pady=5, padx=10)
-        
         self.btn_speed = ctk.CTkButton(self.sidebar, text="Speedtest", command=self.iniciar_speedtest)
         self.btn_speed.pack(pady=20, padx=10)
         self.lbl_speed = ctk.CTkLabel(self.sidebar, text="---")
         self.lbl_speed.pack()
 
-        # --- Área de Trabalho (Direita) ---
-        # Criamos um PanedWindow principal que divide o topo e o fundo
+        # Área de Trabalho
         self.main_pane = tk.PanedWindow(self, orient=tk.VERTICAL, bg="#1a1a1a", sashwidth=6, sashrelief=tk.RAISED)
         self.main_pane.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-        # Container Superior (Vazio ou para info geral) - Onde fica o "espaço sobrando"
         self.topo_vazio = tk.Frame(self.main_pane, bg="#1a1a1a")
-        self.main_pane.add(self.topo_vazio, height=400) # Começa com metade da tela
+        self.main_pane.add(self.topo_vazio, height=100) # Espaço de folga inicial pequeno
 
-        # Container Inferior (Onde os gráficos de IP vivem)
         self.container_graficos = tk.Frame(self.main_pane, bg="#242424")
-        self.main_pane.add(self.container_graficos, height=400)
+        self.main_pane.add(self.container_graficos)
 
-        # Sub-PanedWindow para os IPs (dentro do container inferior)
         self.ips_pane = tk.PanedWindow(self.container_graficos, orient=tk.VERTICAL, bg="#242424", sashwidth=4)
         self.ips_pane.pack(fill="both", expand=True)
 
@@ -73,6 +67,7 @@ class AppRede(ctk.CTk):
         for host in self.hosts:
             ip, nome = host["ip"], host["nome"]
             container_host = tk.Frame(self.ips_pane, bg="#1e1e1e")
+            # Adicionamos sem definir height fixa aqui para permitir o cálculo proporcional depois
             self.ips_pane.add(container_host, minsize=50)
 
             header = tk.Frame(container_host, bg="#333", height=25)
@@ -96,6 +91,17 @@ class AppRede(ctk.CTk):
             canvas_widget.pack(fill="both", expand=True)
 
             self.widgets_graficos[ip] = {"line": line, "ax": ax, "canvas": canvas, "label": lbl, "vspans": []}
+
+        # --- A MÁGICA DA DIVISÃO IGUAL ---
+        # Forçamos a atualização da interface para saber o tamanho real do pane
+        self.update_idletasks()
+        altura_total = self.ips_pane.winfo_height()
+        quantidade = len(self.hosts)
+        
+        if quantidade > 0:
+            altura_cada = altura_total // quantidade
+            for child in self.ips_pane.winfo_children():
+                self.ips_pane.paneconfig(child, height=altura_cada)
 
     def loop_monitoramento(self):
         while True:
@@ -123,7 +129,6 @@ class AppRede(ctk.CTk):
                         w["ax"].relim(); w["ax"].autoscale_view(); w["canvas"].draw_idle()
             time.sleep(1)
 
-    # ... (Funções de adicionar, remover, editar e speedtest permanecem as mesmas das versões anteriores)
     def editar_nome_host(self, ip):
         dialog = ctk.CTkInputDialog(text=f"Novo nome:", title="Editar")
         novo = dialog.get_input()
