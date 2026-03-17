@@ -13,7 +13,7 @@ from collections import deque
 class AppRede(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Lucas - MultiPing Pro (Smart Proportions)")
+        self.title("Lucas - MultiPing Pro (Reset Logic)")
         self.geometry("1200x800")
         
         self.config_file = "hosts_config.json"
@@ -24,34 +24,50 @@ class AppRede(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # Sidebar
+        # --- Sidebar ---
         self.sidebar = ctk.CTkFrame(self, width=200)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        
         ctk.CTkLabel(self.sidebar, text="Menu", font=("Arial", 16, "bold")).pack(pady=10)
+        
         ctk.CTkButton(self.sidebar, text="+ Add Host", command=self.janela_adicionar).pack(pady=5, padx=10)
+        
+        # O NOVO BOTÃO DE RESET
+        self.btn_reset = ctk.CTkButton(self.sidebar, text="Reset Layout", fg_color="#555", hover_color="#777", command=self.rebalancear_graficos)
+        self.btn_reset.pack(pady=5, padx=10)
+        
         self.btn_speed = ctk.CTkButton(self.sidebar, text="Speedtest", command=self.iniciar_speedtest)
         self.btn_speed.pack(pady=20, padx=10)
+        
         self.lbl_speed = ctk.CTkLabel(self.sidebar, text="---")
         self.lbl_speed.pack()
 
-        # Área de Trabalho
+        # --- Área de Trabalho ---
         self.main_pane = tk.PanedWindow(self, orient=tk.VERTICAL, bg="#1a1a1a", sashwidth=8, sashrelief=tk.RAISED)
         self.main_pane.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 
-        # Espaço de folga superior
         self.topo_vazio = tk.Frame(self.main_pane, bg="#1a1a1a")
-        self.main_pane.add(self.topo_vazio, height=50) # Começa pequeno no topo
+        self.main_pane.add(self.topo_vazio, height=50)
 
-        # Container de Gráficos
         self.container_graficos = tk.Frame(self.main_pane, bg="#242424")
         self.main_pane.add(self.container_graficos)
 
-        # PanedWindow dos IPs
-        self.ips_pane = tk.PanedWindow(self.container_graficos, orient=tk.VERTICAL, bg="#242424", sashwidth=4, sashrelief=tk.FLAT)
+        self.ips_pane = tk.PanedWindow(self.container_graficos, orient=tk.VERTICAL, bg="#242424", sashwidth=4)
         self.ips_pane.pack(fill="both", expand=True)
 
         self.atualizar_lista_graficos()
         threading.Thread(target=self.loop_monitoramento, daemon=True).start()
+
+    def rebalancear_graficos(self):
+        """ Força todos os gráficos a terem a mesma altura proporcional """
+        self.update_idletasks()
+        altura_disponivel = self.ips_pane.winfo_height()
+        quantidade = len(self.hosts)
+        
+        if quantidade > 0:
+            fatia = altura_disponivel // quantidade
+            for child in self.ips_pane.winfo_children():
+                self.ips_pane.paneconfig(child, height=fatia)
 
     def atualizar_lista_graficos(self):
         for child in self.ips_pane.winfo_children():
@@ -61,8 +77,6 @@ class AppRede(ctk.CTk):
         for host in self.hosts:
             ip, nome = host["ip"], host["nome"]
             container_host = tk.Frame(self.ips_pane, bg="#1e1e1e")
-            
-            # Adicionamos com stretch="always" para que todos queiram crescer igual
             self.ips_pane.add(container_host, minsize=40, stretch="always")
 
             header = tk.Frame(container_host, bg="#333", height=25)
@@ -86,21 +100,10 @@ class AppRede(ctk.CTk):
             canvas_widget.pack(fill="both", expand=True)
 
             self.widgets_graficos[ip] = {"line": line, "ax": ax, "canvas": canvas, "label": lbl, "vspans": []}
-
-        # Forçar redistribuição proporcional inicial
+        
         self.rebalancear_graficos()
 
-    def rebalancear_graficos(self):
-        """ Divide o espaço disponível igualmente entre os gráficos existentes """
-        self.update_idletasks()
-        altura_disponivel = self.ips_pane.winfo_height()
-        quantidade = len(self.hosts)
-        
-        if quantidade > 0:
-            fatia = altura_disponivel // quantidade
-            for child in self.ips_pane.winfo_children():
-                self.ips_pane.paneconfig(child, height=fatia)
-
+    # --- O restante das funções permanece igual ---
     def loop_monitoramento(self):
         while True:
             for host in self.hosts:
@@ -108,26 +111,22 @@ class AppRede(ctk.CTk):
                 ms = ping(ip, timeout=1)
                 is_timeout = ms is None
                 latencia = ms * 1000 if not is_timeout else 0
-                
                 if ip in self.dados_pings:
                     self.dados_pings[ip].append((latencia, is_timeout))
                     if ip in self.widgets_graficos:
                         w = self.widgets_graficos[ip]
                         hist = list(self.dados_pings[ip])
                         w["line"].set_ydata([d[0] for d in hist])
-                        
                         for p in w["vspans"]: p.remove()
                         w["vspans"] = []
-                        for i, (val, timeout) in enumerate(hist):
-                            if timeout:
+                        for i, (v, t) in enumerate(hist):
+                            if t:
                                 span = w["ax"].axvspan(i-0.5, i+0.5, color='red', alpha=0.6)
                                 w["vspans"].append(span)
-
                         w["label"].config(text=f"{host['nome'].upper()} | {latencia:.1f} ms" if not is_timeout else f"🔴 {host['nome'].upper()} | TIMEOUT")
                         w["ax"].relim(); w["ax"].autoscale_view(); w["canvas"].draw_idle()
             time.sleep(1)
 
-    # --- Funções de suporte ---
     def carregar_hosts(self):
         if os.path.exists(self.config_file):
             with open(self.config_file, "r") as f: return json.load(f)
