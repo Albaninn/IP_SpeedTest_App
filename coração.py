@@ -62,18 +62,26 @@ class AppRede(ctk.CTk):
         for child in self.ips_pane.winfo_children(): child.destroy()
         self.widgets_graficos = {}
 
-        for host in self.hosts:
+        for index, host in enumerate(self.hosts):
             ip, nome = host["ip"], host["nome"]
             container_host = tk.Frame(self.ips_pane, bg="#1e1e1e")
             self.ips_pane.add(container_host, minsize=60, stretch="always")
 
-            header = tk.Frame(container_host, bg="#2b2b2b", height=30)
+            # Header (Área sensível ao arrastar)
+            header = tk.Frame(container_host, bg="#2b2b2b", height=30, cursor="fleur")
             header.pack(fill="x", side="top")
             
-            # Formatação Nome (IP) como no exemplo
+            # Binds para Arrastar o Header
+            header.bind("<Button-1>", lambda e, i=index: self.iniciar_arraste(i))
+            header.bind("<B1-Motion>", self.movimentar_arraste)
+            
+            # Título Host (IP)
             texto_titulo = f"{nome.upper()} ({ip})"
-            lbl_info = tk.Label(header, text=texto_titulo, bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"), cursor="hand2")
+            lbl_info = tk.Label(header, text=texto_titulo, bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
             lbl_info.pack(side="left", padx=10)
+            # Repassando os eventos do Label para o Header (para não "travar" o clique no texto)
+            lbl_info.bind("<Button-1>", lambda e, i=index: self.iniciar_arraste(i))
+            lbl_info.bind("<B1-Motion>", self.movimentar_arraste)
             lbl_info.bind("<Double-Button-1>", lambda e, i=ip: self.editar_nome_host(i))
 
             lbl_stats = tk.Label(header, text="min: - | max: - | avg: -", bg="#2b2b2b", fg="#aaa", font=("Consolas", 9))
@@ -81,6 +89,7 @@ class AppRede(ctk.CTk):
 
             tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i)).pack(side="right", padx=5)
 
+            # --- Gráfico e Restante do Layout ---
             fig, ax = plt.subplots()
             fig.patch.set_facecolor('#1e1e1e')
             ax.set_facecolor('#1e1e1e')
@@ -95,6 +104,40 @@ class AppRede(ctk.CTk):
             self.widgets_graficos[ip] = {"line": line, "ax": ax, "canvas": canvas, "label": lbl_info, "stats": lbl_stats, "vspans": [], "ultimo_status": True}
         
         self.rebalancear_graficos()
+
+    # --- Lógica de Arrastar e Soltar ---
+    def iniciar_arraste(self, index):
+        self.drag_index = index
+
+    def movimentar_arraste(self, event):
+        # Localiza qual pane está sob o mouse
+        y_mouse = self.ips_pane.winfo_pointery() - self.ips_pane.winfo_rooty()
+        
+        # Encontra o novo índice baseado na posição Y
+        novo_index = None
+        altura_acumulada = 0
+        for i, child in enumerate(self.ips_pane.panes()):
+            info = self.ips_pane.paneconfig(child)
+            altura_pane = self.ips_pane.winfo_appext() # Apenas para referência interna
+            
+            # Se o mouse passou da metade da altura do pane atual, ele quer trocar
+            centro_pane = self.ips_pane.proxy_coord(i) # Pega a coordenada das divisórias
+            
+            # Simplificação: Verificamos em qual pane o Y do mouse caiu
+            # Usamos winfo_children para iterar nos frames dos hosts
+            for idx, frame in enumerate(self.ips_pane.winfo_children()):
+                f_y = frame.winfo_y()
+                f_h = frame.winfo_height()
+                if f_y < y_mouse < (f_y + f_h):
+                    novo_index = idx
+                    break
+
+        if novo_index is not None and novo_index != self.drag_index:
+            # Troca na lista original
+            self.hosts[self.drag_index], self.hosts[novo_index] = self.hosts[novo_index], self.hosts[self.drag_index]
+            self.drag_index = novo_index
+            self.salvar_hosts()
+            self.atualizar_lista_graficos()
 
     # --- O restante do código (loop_monitoramento, save, etc) permanece igual ---
     def loop_monitoramento(self):
