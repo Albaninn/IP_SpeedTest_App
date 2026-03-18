@@ -13,7 +13,7 @@ from collections import deque
 class AppRede(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Lucas - MultiPing Pro (Color Zones)")
+        self.title("Lucas - MultiPing Pro")
         self.geometry("1200x800")
         
         self.config_file = "hosts_config.json"
@@ -51,97 +51,70 @@ class AppRede(ctk.CTk):
     def atualizar_lista_graficos(self):
         for child in self.ips_pane.winfo_children(): child.destroy()
         self.widgets_graficos = {}
-
         for host in self.hosts:
             ip, nome = host["ip"], host["nome"]
             container_host = tk.Frame(self.ips_pane, bg="#1e1e1e")
             self.ips_pane.add(container_host, minsize=40, stretch="always")
-
             header = tk.Frame(container_host, bg="#333", height=25)
             header.pack(fill="x", side="top")
-            lbl = tk.Label(header, text=f"{nome.upper()} ({ip})", bg="#333", fg="white", font=("Consolas", 9, "bold"))
+            lbl = tk.Label(header, text=f"{nome.upper()} ({ip})", bg="#333", fg="white", font=("Consolas", 9, "bold"), cursor="hand2")
             lbl.pack(side="left", padx=10)
             lbl.bind("<Double-Button-1>", lambda e, i=ip: self.editar_nome_host(i))
-            btn_del = tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i))
-            btn_del.pack(side="right", padx=5)
+            tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i)).pack(side="right", padx=5)
 
-            # --- Criação do Gráfico com Fundo Colorido ---
             fig, ax = plt.subplots()
             fig.patch.set_facecolor('#1e1e1e')
             ax.set_facecolor('#1e1e1e')
             ax.tick_params(colors='gray', labelsize=7)
+            # Justificado:
+            ax.set_xlim(0, 59)
+            fig.subplots_adjust(left=0.06, right=1, top=1, bottom=0) # Pequena margem na esquerda para os números do Y
             
-            # --- Zonas de cor com limites dinâmicos ---
-            ax.axhspan(0, 200, facecolor='green', alpha=0.1, zorder=0)
-            ax.axhspan(200, 500, facecolor='yellow', alpha=0.1, zorder=0)
+            # Zonas de cor
+            ax.axhspan(0, 200, facecolor='green', alpha=0.05, zorder=0)
+            ax.axhspan(200, 500, facecolor='yellow', alpha=0.05, zorder=0)
+            ax.axhspan(500, 10000, facecolor='red', alpha=0.05, zorder=0)
             
-            # O segredo está aqui: Definimos um limite alto para o vermelho, 
-            # mas dizemos ao Axes para ignorar as faixas no autoscale
-            ax.axhspan(500, 10000, facecolor='red', alpha=0.1, zorder=0)
-            
-            # Esta linha abaixo é crucial: ela impede que as faixas 'empurrem' o gráfico para cima
-            ax.set_autoscaley_on(True)
-
-            # Adicionamos range(60) para representar os 60 pontos no eixo X
             line, = ax.step(range(60), [0]*60, color='#00d4ff', linewidth=1.5, zorder=2, where='post')
-            
             canvas = FigureCanvasTkAgg(fig, master=container_host)
-            canvas_widget = canvas.get_tk_widget()
-            canvas_widget.pack(fill="both", expand=True)
-
+            canvas.get_tk_widget().pack(fill="both", expand=True)
             self.widgets_graficos[ip] = {"line": line, "ax": ax, "canvas": canvas, "label": lbl, "vspans": []}
-        
         self.rebalancear_graficos()
 
     def loop_monitoramento(self):
         while True:
-            for host in self.hosts:
+            for host in list(self.hosts):
                 ip = host["ip"]
-                ms = ping(ip, timeout=1)
-                is_timeout = ms is None
-                latencia = ms * 1000 if not is_timeout else 0
-                
+                try:
+                    ms = ping(ip, timeout=0.8) # Timeout curto para não travar na troca de cabo
+                    is_timeout = ms is None
+                    latencia = ms * 1000 if not is_timeout else 0
+                except:
+                    is_timeout, latencia = True, 0
+
                 if ip in self.dados_pings:
                     self.dados_pings[ip].append((latencia, is_timeout))
                     if ip in self.widgets_graficos:
                         w = self.widgets_graficos[ip]
                         hist = list(self.dados_pings[ip])
-                        valores_ping = [d[0] for d in hist]
-                        
-                        # 1. Atualiza os dados da linha
-                        w["line"].set_data(range(len(valores_ping)), valores_ping)
-                        
-                        # 2. Lógica de Escala Inteligente (O segredo está aqui)
-                        max_atual = max(valores_ping) if valores_ping else 1
-                        
-                        # Se o ping for muito estável (ex: tudo 1ms), 
-                        # adicionamos uma margem minúscula só pra linha não sumir no topo
-                        teto_grafico = max_atual * 1.2
-                        
-                        w["ax"].set_ylim(0, teto_grafico) 
-                        
-                        # 3. Gerencia os blocos vermelhos de TIMEOUT (axvspan)
+                        valores = [d[0] for d in hist]
+                        w["line"].set_data(range(len(valores)), valores)
+                        # Escala 1.2x
+                        max_v = max(valores) if valores else 1
+                        w["ax"].set_ylim(0, max_v * 1.2)
+                        w["ax"].set_xlim(0, 59)
+                        # Vspans
                         for p in w["vspans"]: p.remove()
                         w["vspans"] = []
-                        for i, (val, timeout) in enumerate(hist):
-                            if timeout:
-                                span = w["ax"].axvspan(i-0.5, i+0.5, color='red', alpha=0.6, zorder=1)
-                                w["vspans"].append(span)
-
-                        # 4. Atualiza Labels e Canvas
-                        w["label"].config(text=f"{host['nome'].upper()} | {latencia:.1f} ms" if not is_timeout else f"🔴 {host['nome'].upper()} | TIMEOUT")
+                        for i, (v, t) in enumerate(hist):
+                            if t: w["vspans"].append(w["ax"].axvspan(i-0.5, i+0.5, color='red', alpha=0.6, zorder=1))
+                        # UI
+                        txt = f"{host['nome'].upper()} | {latencia:.1f} ms" if not is_timeout else f"🔴 {host['nome'].upper()} | TIMEOUT"
+                        w["label"].config(text=txt, fg="#ff5555" if is_timeout else "white")
                         w["canvas"].draw_idle()
             time.sleep(1)
 
-    # --- Restante das funções de controle ---
-    def rebalancear_graficos(self):
-        self.update_idletasks()
-        h_total = self.ips_pane.winfo_height()
-        qtd = len(self.hosts)
-        if qtd > 0:
-            fatia = h_total // qtd
-            for child in self.ips_pane.winfo_children(): self.ips_pane.paneconfig(child, height=fatia)
-
+    # --- Funções Extras (Save, Edit, Speedtest, etc.) ---
     def carregar_hosts(self):
         if os.path.exists(self.config_file):
             with open(self.config_file, "r") as f: return json.load(f)
@@ -150,11 +123,18 @@ class AppRede(ctk.CTk):
     def salvar_hosts(self):
         with open(self.config_file, "w") as f: json.dump(self.hosts, f)
 
+    def rebalancear_graficos(self):
+        self.update_idletasks()
+        h = self.ips_pane.winfo_height()
+        if self.hosts:
+            f = h // len(self.hosts)
+            for c in self.ips_pane.winfo_children(): self.ips_pane.paneconfig(c, height=f)
+
     def editar_nome_host(self, ip):
-        n = ctk.CTkInputDialog(text="Novo nome:", title="Editar").get_input()
-        if n:
+        novo = ctk.CTkInputDialog(text="Novo nome:", title="Editar").get_input()
+        if novo:
             for h in self.hosts:
-                if h["ip"] == ip: h["nome"] = n
+                if h["ip"] == ip: h["nome"] = novo
             self.salvar_hosts(); self.atualizar_lista_graficos()
 
     def remover_host(self, ip):
@@ -181,5 +161,4 @@ class AppRede(ctk.CTk):
         finally: self.btn_speed.configure(state="normal")
 
 if __name__ == "__main__":
-    app = AppRede()
-    app.mainloop()
+    AppRede().mainloop()
