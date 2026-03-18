@@ -112,15 +112,13 @@ class AppRede(ctk.CTk):
                         w["line"].set_data(range(len(valores_ping)), valores_ping)
                         
                         # 2. Lógica de Escala Inteligente (O segredo está aqui)
-                        max_atual = max(valores_ping) if valores_ping else 0
+                        max_atual = max(valores_ping) if valores_ping else 1
                         
-                        # Definimos o teto do gráfico: 
-                        # Se o ping for baixo, mostra até 50ms (para não ficar esmagado)
-                        # Se for alto, mostra o ping máximo + 20% de margem
-                        teto_grafico = max(50, max_atual * 1.2)
+                        # Se o ping for muito estável (ex: tudo 1ms), 
+                        # adicionamos uma margem minúscula só pra linha não sumir no topo
+                        teto_grafico = max_atual * 1.2
                         
-                        # Forçamos o eixo Y a obedecer esse teto, ignorando as faixas coloridas
-                        w["ax"].set_ylim(-2, teto_grafico) 
+                        w["ax"].set_ylim(0, teto_grafico) 
                         
                         # 3. Gerencia os blocos vermelhos de TIMEOUT (axvspan)
                         for p in w["vspans"]: p.remove()
