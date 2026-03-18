@@ -67,19 +67,18 @@ class AppRede(ctk.CTk):
             container_host = tk.Frame(self.ips_pane, bg="#1e1e1e")
             self.ips_pane.add(container_host, minsize=60, stretch="always")
 
-            # Header (Área sensível ao arrastar)
+            # Header - Barra de arraste
             header = tk.Frame(container_host, bg="#2b2b2b", height=30, cursor="fleur")
             header.pack(fill="x", side="top")
             
-            # Binds para Arrastar o Header
+            # Binds corrigidos (passando o IP para identificar o bloco)
             header.bind("<Button-1>", lambda e, i=index: self.iniciar_arraste(i))
             header.bind("<B1-Motion>", self.movimentar_arraste)
             
-            # Título Host (IP)
-            texto_titulo = f"{nome.upper()} ({ip})"
-            lbl_info = tk.Label(header, text=texto_titulo, bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
+            # Label Nome (IP)
+            lbl_info = tk.Label(header, text=f"{nome.upper()} ({ip})", bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
             lbl_info.pack(side="left", padx=10)
-            # Repassando os eventos do Label para o Header (para não "travar" o clique no texto)
+            # Faz o label também responder ao arraste
             lbl_info.bind("<Button-1>", lambda e, i=index: self.iniciar_arraste(i))
             lbl_info.bind("<B1-Motion>", self.movimentar_arraste)
             lbl_info.bind("<Double-Button-1>", lambda e, i=ip: self.editar_nome_host(i))
@@ -89,53 +88,48 @@ class AppRede(ctk.CTk):
 
             tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i)).pack(side="right", padx=5)
 
-            # --- Gráfico e Restante do Layout ---
+            # --- Restante do Gráfico (igual ao anterior) ---
             fig, ax = plt.subplots()
             fig.patch.set_facecolor('#1e1e1e')
             ax.set_facecolor('#1e1e1e')
             ax.tick_params(colors='gray', labelsize=8)
             ax.set_xlim(0, 59)
             fig.subplots_adjust(left=0.04, right=1, top=1, bottom=0) 
-            
             line, = ax.step(range(60), [0]*60, color='#00d4ff', linewidth=1.5, zorder=2, where='post')
             canvas = FigureCanvasTkAgg(fig, master=container_host)
             canvas.get_tk_widget().pack(fill="both", expand=True)
-
             self.widgets_graficos[ip] = {"line": line, "ax": ax, "canvas": canvas, "label": lbl_info, "stats": lbl_stats, "vspans": [], "ultimo_status": True}
         
         self.rebalancear_graficos()
 
-    # --- Lógica de Arrastar e Soltar ---
+    # --- NOVA LÓGICA DE ARRASTE (Sem erros de atributo) ---
     def iniciar_arraste(self, index):
         self.drag_index = index
 
     def movimentar_arraste(self, event):
-        # Localiza qual pane está sob o mouse
+        # Localiza a posição vertical do mouse em relação ao container de gráficos
         y_mouse = self.ips_pane.winfo_pointery() - self.ips_pane.winfo_rooty()
         
-        # Encontra o novo índice baseado na posição Y
         novo_index = None
-        altura_acumulada = 0
-        for i, child in enumerate(self.ips_pane.panes()):
-            info = self.ips_pane.paneconfig(child)
-            altura_pane = self.ips_pane.winfo_appext() # Apenas para referência interna
+        # Itera sobre os widgets filhos para ver onde o mouse está apontando
+        for idx, child in enumerate(self.ips_pane.winfo_children()):
+            # Pega o topo e o fundo de cada bloco de gráfico
+            y_topo = child.winfo_y()
+            y_fundo = y_topo + child.winfo_height()
             
-            # Se o mouse passou da metade da altura do pane atual, ele quer trocar
-            centro_pane = self.ips_pane.proxy_coord(i) # Pega a coordenada das divisórias
-            
-            # Simplificação: Verificamos em qual pane o Y do mouse caiu
-            # Usamos winfo_children para iterar nos frames dos hosts
-            for idx, frame in enumerate(self.ips_pane.winfo_children()):
-                f_y = frame.winfo_y()
-                f_h = frame.winfo_height()
-                if f_y < y_mouse < (f_y + f_h):
-                    novo_index = idx
-                    break
-
+            if y_topo < y_mouse < y_fundo:
+                novo_index = idx
+                break
+        
+        # Se o mouse mudou de bloco, a gente troca na lista
         if novo_index is not None and novo_index != self.drag_index:
-            # Troca na lista original
+            # Troca os itens na lista self.hosts
             self.hosts[self.drag_index], self.hosts[novo_index] = self.hosts[novo_index], self.hosts[self.drag_index]
+            
+            # Atualiza qual é o novo índice que estamos arrastando agora
             self.drag_index = novo_index
+            
+            # Salva a nova ordem e reconstrói a tela
             self.salvar_hosts()
             self.atualizar_lista_graficos()
 
