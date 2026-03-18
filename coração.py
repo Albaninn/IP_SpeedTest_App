@@ -13,7 +13,7 @@ from collections import deque
 class AppRede(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("Lucas - MultiPing Pro (Reset Logic)")
+        self.title("Lucas - MultiPing Pro (Color Zones)")
         self.geometry("1200x800")
         
         self.config_file = "hosts_config.json"
@@ -24,54 +24,32 @@ class AppRede(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        # --- Sidebar ---
+        # Sidebar
         self.sidebar = ctk.CTkFrame(self, width=200)
         self.sidebar.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-        
         ctk.CTkLabel(self.sidebar, text="Menu", font=("Arial", 16, "bold")).pack(pady=10)
-        
         ctk.CTkButton(self.sidebar, text="+ Add Host", command=self.janela_adicionar).pack(pady=5, padx=10)
-        
-        # O NOVO BOTÃO DE RESET
-        self.btn_reset = ctk.CTkButton(self.sidebar, text="Reset Layout", fg_color="#555", hover_color="#777", command=self.rebalancear_graficos)
-        self.btn_reset.pack(pady=5, padx=10)
-        
+        ctk.CTkButton(self.sidebar, text="Reset Layout", fg_color="#555", command=self.rebalancear_graficos).pack(pady=5, padx=10)
         self.btn_speed = ctk.CTkButton(self.sidebar, text="Speedtest", command=self.iniciar_speedtest)
         self.btn_speed.pack(pady=20, padx=10)
-        
         self.lbl_speed = ctk.CTkLabel(self.sidebar, text="---")
         self.lbl_speed.pack()
 
-        # --- Área de Trabalho ---
+        # Workspace
         self.main_pane = tk.PanedWindow(self, orient=tk.VERTICAL, bg="#1a1a1a", sashwidth=8, sashrelief=tk.RAISED)
         self.main_pane.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-
         self.topo_vazio = tk.Frame(self.main_pane, bg="#1a1a1a")
         self.main_pane.add(self.topo_vazio, height=50)
-
         self.container_graficos = tk.Frame(self.main_pane, bg="#242424")
         self.main_pane.add(self.container_graficos)
-
         self.ips_pane = tk.PanedWindow(self.container_graficos, orient=tk.VERTICAL, bg="#242424", sashwidth=4)
         self.ips_pane.pack(fill="both", expand=True)
 
         self.atualizar_lista_graficos()
         threading.Thread(target=self.loop_monitoramento, daemon=True).start()
 
-    def rebalancear_graficos(self):
-        """ Força todos os gráficos a terem a mesma altura proporcional """
-        self.update_idletasks()
-        altura_disponivel = self.ips_pane.winfo_height()
-        quantidade = len(self.hosts)
-        
-        if quantidade > 0:
-            fatia = altura_disponivel // quantidade
-            for child in self.ips_pane.winfo_children():
-                self.ips_pane.paneconfig(child, height=fatia)
-
     def atualizar_lista_graficos(self):
-        for child in self.ips_pane.winfo_children():
-            child.destroy()
+        for child in self.ips_pane.winfo_children(): child.destroy()
         self.widgets_graficos = {}
 
         for host in self.hosts:
@@ -81,19 +59,31 @@ class AppRede(ctk.CTk):
 
             header = tk.Frame(container_host, bg="#333", height=25)
             header.pack(fill="x", side="top")
-            
             lbl = tk.Label(header, text=f"{nome.upper()} ({ip})", bg="#333", fg="white", font=("Consolas", 9, "bold"))
             lbl.pack(side="left", padx=10)
             lbl.bind("<Double-Button-1>", lambda e, i=ip: self.editar_nome_host(i))
-
             btn_del = tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i))
             btn_del.pack(side="right", padx=5)
 
+            # --- Criação do Gráfico com Fundo Colorido ---
             fig, ax = plt.subplots()
             fig.patch.set_facecolor('#1e1e1e')
             ax.set_facecolor('#1e1e1e')
             ax.tick_params(colors='gray', labelsize=7)
-            line, = ax.plot([0]*60, color='#1f77b4', linewidth=1.5)
+            
+            # --- Zonas de cor com limites dinâmicos ---
+            ax.axhspan(0, 200, facecolor='green', alpha=0.1, zorder=0)
+            ax.axhspan(200, 500, facecolor='yellow', alpha=0.1, zorder=0)
+            
+            # O segredo está aqui: Definimos um limite alto para o vermelho, 
+            # mas dizemos ao Axes para ignorar as faixas no autoscale
+            ax.axhspan(500, 10000, facecolor='red', alpha=0.1, zorder=0)
+            
+            # Esta linha abaixo é crucial: ela impede que as faixas 'empurrem' o gráfico para cima
+            ax.set_autoscaley_on(True)
+
+            # Adicionamos range(60) para representar os 60 pontos no eixo X
+            line, = ax.step(range(60), [0]*60, color='#00d4ff', linewidth=1.5, zorder=2, where='post')
             
             canvas = FigureCanvasTkAgg(fig, master=container_host)
             canvas_widget = canvas.get_tk_widget()
@@ -103,7 +93,6 @@ class AppRede(ctk.CTk):
         
         self.rebalancear_graficos()
 
-    # --- O restante das funções permanece igual ---
     def loop_monitoramento(self):
         while True:
             for host in self.hosts:
@@ -111,21 +100,49 @@ class AppRede(ctk.CTk):
                 ms = ping(ip, timeout=1)
                 is_timeout = ms is None
                 latencia = ms * 1000 if not is_timeout else 0
+                
                 if ip in self.dados_pings:
                     self.dados_pings[ip].append((latencia, is_timeout))
                     if ip in self.widgets_graficos:
                         w = self.widgets_graficos[ip]
                         hist = list(self.dados_pings[ip])
-                        w["line"].set_ydata([d[0] for d in hist])
+                        valores_ping = [d[0] for d in hist]
+                        
+                        # 1. Atualiza os dados da linha
+                        w["line"].set_data(range(len(valores_ping)), valores_ping)
+                        
+                        # 2. Lógica de Escala Inteligente (O segredo está aqui)
+                        max_atual = max(valores_ping) if valores_ping else 0
+                        
+                        # Definimos o teto do gráfico: 
+                        # Se o ping for baixo, mostra até 50ms (para não ficar esmagado)
+                        # Se for alto, mostra o ping máximo + 20% de margem
+                        teto_grafico = max(50, max_atual * 1.2)
+                        
+                        # Forçamos o eixo Y a obedecer esse teto, ignorando as faixas coloridas
+                        w["ax"].set_ylim(-2, teto_grafico) 
+                        
+                        # 3. Gerencia os blocos vermelhos de TIMEOUT (axvspan)
                         for p in w["vspans"]: p.remove()
                         w["vspans"] = []
-                        for i, (v, t) in enumerate(hist):
-                            if t:
-                                span = w["ax"].axvspan(i-0.5, i+0.5, color='red', alpha=0.6)
+                        for i, (val, timeout) in enumerate(hist):
+                            if timeout:
+                                span = w["ax"].axvspan(i-0.5, i+0.5, color='red', alpha=0.6, zorder=1)
                                 w["vspans"].append(span)
+
+                        # 4. Atualiza Labels e Canvas
                         w["label"].config(text=f"{host['nome'].upper()} | {latencia:.1f} ms" if not is_timeout else f"🔴 {host['nome'].upper()} | TIMEOUT")
-                        w["ax"].relim(); w["ax"].autoscale_view(); w["canvas"].draw_idle()
+                        w["canvas"].draw_idle()
             time.sleep(1)
+
+    # --- Restante das funções de controle ---
+    def rebalancear_graficos(self):
+        self.update_idletasks()
+        h_total = self.ips_pane.winfo_height()
+        qtd = len(self.hosts)
+        if qtd > 0:
+            fatia = h_total // qtd
+            for child in self.ips_pane.winfo_children(): self.ips_pane.paneconfig(child, height=fatia)
 
     def carregar_hosts(self):
         if os.path.exists(self.config_file):
