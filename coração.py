@@ -59,28 +59,31 @@ class AppRede(ctk.CTk):
         threading.Thread(target=self.loop_monitoramento, daemon=True).start()
 
     def atualizar_lista_graficos(self):
+        # Limpa apenas na inicialização ou quando um host é REALMENTE deletado/adicionado
         for child in self.ips_pane.winfo_children(): child.destroy()
         self.widgets_graficos = {}
 
         for index, host in enumerate(self.hosts):
             ip, nome = host["ip"], host["nome"]
             container_host = tk.Frame(self.ips_pane, bg="#1e1e1e")
+            # Identificamos o frame com o IP para facilitar a busca
+            container_host.ip_referencia = ip 
             self.ips_pane.add(container_host, minsize=60, stretch="always")
 
-            # Header - Barra de arraste
             header = tk.Frame(container_host, bg="#2b2b2b", height=30, cursor="fleur")
             header.pack(fill="x", side="top")
             
-            # Binds corrigidos (passando o IP para identificar o bloco)
-            header.bind("<Button-1>", lambda e, i=index: self.iniciar_arraste(i))
+            # Binds de Arraste (Agora com o evento de Soltar)
+            header.bind("<Button-1>", self.iniciar_arraste)
             header.bind("<B1-Motion>", self.movimentar_arraste)
+            header.bind("<ButtonRelease-1>", self.finalizar_arraste)
             
-            # Label Nome (IP)
             lbl_info = tk.Label(header, text=f"{nome.upper()} ({ip})", bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
             lbl_info.pack(side="left", padx=10)
-            # Faz o label também responder ao arraste
-            lbl_info.bind("<Button-1>", lambda e, i=index: self.iniciar_arraste(i))
+            # Repassar binds para o label também
+            lbl_info.bind("<Button-1>", self.iniciar_arraste)
             lbl_info.bind("<B1-Motion>", self.movimentar_arraste)
+            lbl_info.bind("<ButtonRelease-1>", self.finalizar_arraste)
             lbl_info.bind("<Double-Button-1>", lambda e, i=ip: self.editar_nome_host(i))
 
             lbl_stats = tk.Label(header, text="min: - | max: - | avg: -", bg="#2b2b2b", fg="#aaa", font=("Consolas", 9))
@@ -88,7 +91,6 @@ class AppRede(ctk.CTk):
 
             tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i)).pack(side="right", padx=5)
 
-            # --- Restante do Gráfico (igual ao anterior) ---
             fig, ax = plt.subplots()
             fig.patch.set_facecolor('#1e1e1e')
             ax.set_facecolor('#1e1e1e')
@@ -102,36 +104,63 @@ class AppRede(ctk.CTk):
         
         self.rebalancear_graficos()
 
-    # --- NOVA LÓGICA DE ARRASTE (Sem erros de atributo) ---
-    def iniciar_arraste(self, index):
-        self.drag_index = index
+    def iniciar_arraste(self, event):
+        # Encontra qual container de gráfico foi clicado
+        widget = event.widget
+        while widget and widget.master != self.ips_pane:
+            widget = widget.master
+        self.container_selecionado = widget
+        if self.container_selecionado:
+            self.container_selecionado.config(bg="#3d3d3d") # Feedback visual
 
     def movimentar_arraste(self, event):
-        # Localiza a posição vertical do mouse em relação ao container de gráficos
+        if not hasattr(self, 'container_selecionado') or not self.container_selecionado:
+            return
+
+        # Posição do mouse dentro do painel de IPs
         y_mouse = self.ips_pane.winfo_pointery() - self.ips_pane.winfo_rooty()
         
-        novo_index = None
-        # Itera sobre os widgets filhos para ver onde o mouse está apontando
-        for idx, child in enumerate(self.ips_pane.winfo_children()):
-            # Pega o topo e o fundo de cada bloco de gráfico
-            y_topo = child.winfo_y()
-            y_fundo = y_topo + child.winfo_height()
-            
-            if y_topo < y_mouse < y_fundo:
-                novo_index = idx
-                break
+        # Lista todos os gráficos (panes) atuais
+        todos_panes = self.ips_pane.panes()
         
-        # Se o mouse mudou de bloco, a gente troca na lista
-        if novo_index is not None and novo_index != self.drag_index:
-            # Troca os itens na lista self.hosts
-            self.hosts[self.drag_index], self.hosts[novo_index] = self.hosts[novo_index], self.hosts[self.drag_index]
+        for p in todos_panes:
+            widget_vizinho = self.nametowidget(p)
+            if widget_vizinho == self.container_selecionado:
+                continue
             
-            # Atualiza qual é o novo índice que estamos arrastando agora
-            self.drag_index = novo_index
+            y_centro_vizinho = widget_vizinho.winfo_y() + (widget_vizinho.winfo_height() / 2)
             
-            # Salva a nova ordem e reconstrói a tela
+            # Lógica de troca de posição no PanedWindow
+            idx_selecionado = todos_panes.index(str(self.container_selecionado))
+            idx_vizinho = todos_panes.index(p)
+
+            # Se o mouse passou do centro do vizinho, move o painel
+            if y_mouse < y_centro_vizinho and idx_selecionado > idx_vizinho:
+                # Move para cima do vizinho
+                self.ips_pane.add(self.container_selecionado, before=widget_vizinho)
+                break
+            elif y_mouse > y_centro_vizinho and idx_selecionado < idx_vizinho:
+                # Move para baixo do vizinho
+                self.ips_pane.add(self.container_selecionado, after=widget_vizinho)
+                break
+
+    def finalizar_arraste(self, event):
+        if hasattr(self, 'container_selecionado') and self.container_selecionado:
+            self.container_selecionado.config(bg="#1e1e1e")
+            
+            # Reconstrói a lista self.hosts na nova ordem para salvar
+            nova_ordem = []
+            for p in self.ips_pane.panes():
+                w = self.nametowidget(p)
+                ip_w = getattr(w, 'ip_referencia', None)
+                for h in self.hosts:
+                    if h['ip'] == ip_w:
+                        nova_ordem.append(h)
+                        break
+            
+            self.hosts = nova_ordem
             self.salvar_hosts()
-            self.atualizar_lista_graficos()
+            # self.rebalancear_graficos() # Opcional: para garantir que os tamanhos fiquem iguais após soltar
 
     # --- O restante do código (loop_monitoramento, save, etc) permanece igual ---
     def loop_monitoramento(self):
