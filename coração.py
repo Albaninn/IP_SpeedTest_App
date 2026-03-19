@@ -10,6 +10,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
+import matplotlib.dates as mdates
 
 class AppRede(ctk.CTk):
     def __init__(self):
@@ -26,8 +27,8 @@ class AppRede(ctk.CTk):
         
         self.hosts = self.carregar_hosts()
         # Inicializa dados com base na janela de tempo (minutos * 60 segundos)
-        self.dados_pings = {h["ip"]: deque([(0, False)] * (self.janela_minutos * 60), 
-                            maxlen=(self.janela_minutos * 60)) for h in self.hosts}
+        self.dados_pings = {h["ip"]: deque([(0, False, time.time())] * (self.janela_minutos * 60), 
+                    maxlen=(self.janela_minutos * 60)) for h in self.hosts}
         self.widgets_graficos = {}
 
         self.grid_columnconfigure(0, weight=1)
@@ -147,36 +148,65 @@ class AppRede(ctk.CTk):
         if ip in self.widgets_graficos:
             w = self.widgets_graficos[ip]
             hist = list(self.dados_pings[ip])
+            
             y_data = [d[0] for d in hist]
+            # Converte os timestamps (segundos) para objetos de data do matplotlib
+            x_data = [datetime.fromtimestamp(d[2]) for d in hist]
             
-            # Atualiza Linha
-            w["line"].set_data(range(len(y_data)), y_data)
+            # Atualiza os dados da linha
+            w["line"].set_data(x_data, y_data)
             
-            # Ajusta Escala e Stats
+            # Ajusta Escala Y
             max_v = max(y_data) if any(y_data) else 50
             w["ax"].set_ylim(0, max_v * 1.2)
-            w["ax"].set_xlim(0, len(y_data)-1)
+            
+            # Ajusta Eixo X (Tempo)
+            w["ax"].set_xlim(x_data[0], x_data[-1])
+            
+            # Formatação do Eixo X para mostrar Hora:Minuto:Segundo
+            w["ax"].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+            
+            # Reduz o número de marcações para não poluir
+            w["ax"].xaxis.set_major_locator(mdates.MaxNLocator(6)) 
 
+            # Estatísticas
             validos = [d[0] for d in hist if not d[1] and d[0] > 0]
             if validos:
                 w["stats"].config(text=f"min: {min(validos):.1f} | max: {max(validos):.1f} | avg: {sum(validos)/len(validos):.1f}")
 
-            # Barras Vermelhas (Timeout)
+            # Barras de Queda (vspans) baseadas no tempo
             for p in w["vspans"]: p.remove()
             w["vspans"] = []
-            for i, (v, t) in enumerate(hist):
-                if t: w["vspans"].append(w["ax"].axvspan(i-0.5, i+0.5, color='red', alpha=0.5, zorder=1))
+            for i, (v, t, ts) in enumerate(hist):
+                if t:
+                    dt = datetime.fromtimestamp(ts)
+                    w["vspans"].append(w["ax"].axvspan(dt, dt, color='red', alpha=0.5))
             
-            # Título dinâmico
-            lat, timeout = ultimo_dado
+            # Título
+            lat, timeout, _ = ultimo_dado
             nome_h = next((h['nome'] for h in self.hosts if h['ip'] == ip), "HOST")
-            if self.pausado:
-                txt = f"⏸ {nome_h.upper()} ({ip}) - PAUSADO"
-            else:
-                txt = f"{nome_h.upper()} ({ip}) | {lat:.1f} ms" if not timeout else f"🔴 {nome_h.upper()} ({ip}) | TIMEOUT"
-            w["label"].config(text=txt, fg="#ff5555" if timeout else "white")
+            txt = f"{nome_h.upper()} ({ip}) | {lat:.1f} ms" if not timeout else f"🔴 {nome_h.upper()} ({ip}) | TIMEOUT"
+            if self.pausado: txt = f"⏸ {nome_h.upper()} ({ip}) - PAUSADO"
             
+            w["label"].config(text=txt, fg="#ff5555" if timeout else "white")
             w["canvas"].draw_idle()
+
+    def thread_atualiza_grafico(self):
+        while True:
+            agora = time.time()
+            for host in list(self.hosts):
+                ip = host["ip"]
+                if not self.pausado:
+                    # Pega a latência e o timeout e adiciona o tempo atual
+                    lat, tout = host.get('ultima_latencia', (0, False))
+                    dado = (lat, tout, agora)
+                else:
+                    dado = (0, False, agora)
+
+                if ip in self.dados_pings:
+                    self.dados_pings[ip].append(dado)
+                    self.atualizar_widget_grafico(ip, dado)
+            time.sleep(1)
 
     def atualizar_lista_graficos(self):
         for child in self.ips_pane.winfo_children(): child.destroy()
