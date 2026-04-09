@@ -5,6 +5,16 @@
 <img src="https://www.google.com/search?q=https://img.shields.io/badge/Charts-Matplotlib-orange.svg" alt="Matplotlib">
 </p>
 
+🛠️ Tech Stack / Tecnologias
+Python | CustomTkinter | Matplotlib | Ping3 | Speedtest-cli
+
+⌨️ Interface
+Double-Click: Rename host / Renomear host.
+
+Pause Button: Stop pings without freezing timeline / Pausar sem travar a linha do tempo.
+
+Apply Button: Update settings / Atualizar configurações.
+
 🌐 Select Language / Selecione o Idioma
 <details>
 <summary>🇺🇸 <b>English Version (Click to expand)</b></summary>
@@ -62,14 +72,5 @@ python coração.py
 
 </details>
 
-🛠️ Tech Stack / Tecnologias
-Python | CustomTkinter | Matplotlib | Ping3 | Speedtest-cli
-
-⌨️ Interface
-Double-Click: Rename host / Renomear host.
-
-Pause Button: Stop pings without freezing timeline / Pausar sem travar a linha do tempo.
-
-Apply Button: Update settings / Atualizar configurações.
 
 Developed by Lucas Albano 👨‍💻
