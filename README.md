@@ -1,8 +1,8 @@
 🚀 Network Monitor
 <p align="center">
-<img src="https://www.google.com/search?q=https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python">
-<img src="https://www.google.com/search?q=https://img.shields.io/badge/UI-CustomTkinter-black.svg" alt="Tkinter">
-<img src="https://www.google.com/search?q=https://img.shields.io/badge/Charts-Matplotlib-orange.svg" alt="Matplotlib">
+  <img src="https://img.shields.io/badge/python-3.10+-blue.svg" alt="Python">
+  <img src="https://img.shields.io/badge/UI-CustomTkinter-black.svg" alt="Tkinter">
+  <img src="https://img.shields.io/badge/Charts-Matplotlib-orange.svg" alt="Matplotlib">
 </p>
 
 🛠️ Tech Stack / Tecnologias
@@ -14,6 +14,8 @@ Double-Click: Rename host / Renomear host.
 Pause Button: Stop pings without freezing timeline / Pausar sem travar a linha do tempo.
 
 Apply Button: Update settings / Atualizar configurações.
+
+
 
 🌐 Select Language / Selecione o Idioma
 <details>
