@@ -184,15 +184,17 @@ class AppRede(ctk.CTk):
             self.ips_pane.add(container, minsize=115, stretch="always") 
 
             header = tk.Frame(container, bg="#2b2b2b", height=30); header.pack(fill="x")
-            btn_f = tk.Frame(header, bg="#2b2b2b"); btn_f.pack(side="left", padx=5)
-            
+        
+            btn_f = tk.Frame(header, bg="#2b2b2b"); btn_f.pack(side="left", padx=5)    
             if index > 0:
                 tk.Button(btn_f, text="▲", bg="#333", fg="white", font=("Arial", 7), command=lambda i=index: self.mover_host(i, -1), bd=0).pack(side="left", padx=1)
             if index < len(self.hosts)-1:
                 tk.Button(btn_f, text="▼", bg="#333", fg="white", font=("Arial", 7), command=lambda i=index: self.mover_host(i, 1), bd=0).pack(side="left", padx=1)
 
-            lbl_info = tk.Label(header, text=f"{nome.upper()} ({ip})", bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
+            texto_titulo = f"{nome.upper()} ({ip})"
+            lbl_info = tk.Label(header, text=texto_titulo, bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
             lbl_info.pack(side="left", padx=10)
+            lbl_info.bind("<Double-Button-1>", lambda e, i=ip: self.editar_nome_host(i))
             lbl_stats = tk.Label(header, text="min: - | max: - | avg: -", bg="#2b2b2b", fg="#aaa", font=("Consolas", 9)); lbl_stats.pack(side="left", padx=20)
             tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i)).pack(side="right", padx=5)
 
