@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from collections import deque
 import matplotlib.dates as mdates
+import matplotlib.ticker as mticker
 
 class AppRede(ctk.CTk):
     def __init__(self):
@@ -18,17 +19,17 @@ class AppRede(ctk.CTk):
         self.title("Network Monitor Pro")
         self.geometry("1300x850")
         
-        # Configurações e Estados
+        # Arquivos e Estados
         self.config_file = "hosts_config.json"
         self.log_file = "log_quedas.txt"
         self.pausado = False
-        self.intervalo_ping = 1.0  # Segundos entre pings
-        self.janela_minutos = 1    # Minutos visíveis no gráfico
+        self.intervalo_ping = 1.0  # Tempo entre disparos
+        self.janela_minutos = 1    # Tempo visível no gráfico
         
         self.hosts = self.carregar_hosts()
-        # Inicializa dados com base na janela de tempo (minutos * 60 segundos)
+        # Cada deque guarda: (latencia, is_timeout, timestamp)
         self.dados_pings = {h["ip"]: deque([(0, False, time.time())] * (self.janela_minutos * 60), 
-                    maxlen=(self.janela_minutos * 60)) for h in self.hosts}
+                            maxlen=(self.janela_minutos * 60)) for h in self.hosts}
         self.widgets_graficos = {}
 
         self.grid_columnconfigure(0, weight=1)
@@ -38,29 +39,25 @@ class AppRede(ctk.CTk):
         self.toolbar = ctk.CTkFrame(self, height=60, corner_radius=0)
         self.toolbar.grid(row=0, column=0, sticky="ew", padx=5, pady=5)
 
-        # Esquerda: Ações
+        # Esquerda
         ctk.CTkButton(self.toolbar, text="+ Host", width=70, command=self.janela_adicionar).pack(side="left", padx=5)
         self.btn_speed = ctk.CTkButton(self.toolbar, text="Speedtest", width=90, command=self.iniciar_speedtest)
         self.btn_speed.pack(side="left", padx=5)
         
-        # Centro-Esquerda: Ajustes de Tempo
+        # Controles de Tempo
         ctk.CTkLabel(self.toolbar, text="Ping (s):", font=("Arial", 11)).pack(side="left", padx=(15, 2))
-        self.entry_ping = ctk.CTkEntry(self.toolbar, width=40, placeholder_text="1")
-        self.entry_ping.insert(0, "1")
-        self.entry_ping.pack(side="left", padx=2)
+        self.entry_ping = ctk.CTkEntry(self.toolbar, width=45); self.entry_ping.insert(0, "1"); self.entry_ping.pack(side="left", padx=2)
         
         ctk.CTkLabel(self.toolbar, text="Gráfico (min):", font=("Arial", 11)).pack(side="left", padx=(10, 2))
-        self.entry_graph = ctk.CTkEntry(self.toolbar, width=40, placeholder_text="1")
-        self.entry_graph.insert(0, "1")
-        self.entry_graph.pack(side="left", padx=2)
+        self.entry_graph = ctk.CTkEntry(self.toolbar, width=45); self.entry_graph.insert(0, "1"); self.entry_graph.pack(side="left", padx=2)
         
         ctk.CTkButton(self.toolbar, text="Aplicar", width=60, fg_color="#555", command=self.aplicar_ajustes).pack(side="left", padx=5)
 
-        # Direita: Controles e Status
-        self.btn_pause = ctk.CTkButton(self.toolbar, text="⏸ Pausar", width=100, fg_color="#a33", command=self.alternar_pausa)
+        # Direita
+        self.btn_pause = ctk.CTkButton(self.toolbar, text="⏸ Pausar", width=100, fg_color="#a33", hover_color="#c44", command=self.alternar_pausa)
         self.btn_pause.pack(side="right", padx=5)
         
-        ctk.CTkButton(self.toolbar, text="Reset Layout", width=100, fg_color="#444", command=self.rebalancear_graficos).pack(side="right", padx=5)
+        ctk.CTkButton(self.toolbar, text="Reset Layout", width=110, fg_color="#444", hover_color="#555", command=self.rebalancear_graficos).pack(side="right", padx=5)
 
         self.lbl_speed = ctk.CTkLabel(self.toolbar, text="S: -- | D: -- | U: --", font=("Arial", 11))
         self.lbl_speed.pack(side="right", padx=20)
@@ -68,14 +65,16 @@ class AppRede(ctk.CTk):
         # --- Área de Gráficos ---
         self.main_pane = tk.PanedWindow(self, orient=tk.VERTICAL, bg="#1a1a1a", sashwidth=8, sashrelief=tk.RAISED)
         self.main_pane.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        
         self.container_graficos = tk.Frame(self.main_pane, bg="#242424")
         self.main_pane.add(self.container_graficos)
+        
         self.ips_pane = tk.PanedWindow(self.container_graficos, orient=tk.VERTICAL, bg="#242424", sashwidth=4)
         self.ips_pane.pack(fill="both", expand=True)
 
         self.atualizar_lista_graficos()
         
-        # Threads separadas: uma para ping, outra para atualizar o tempo do gráfico
+        # Início das Threads
         threading.Thread(target=self.thread_pings, daemon=True).start()
         threading.Thread(target=self.thread_atualiza_grafico, daemon=True).start()
 
@@ -85,14 +84,9 @@ class AppRede(ctk.CTk):
             novo_min = int(self.entry_graph.get())
             if novo_min != self.janela_minutos:
                 self.janela_minutos = novo_min
-                novo_tamanho = self.janela_minutos * 60
-                # Redimensiona os deques sem perder dados (mantendo o final)
+                novo_tam = self.janela_minutos * 60
                 for ip in self.dados_pings:
-                    antigo = list(self.dados_pings[ip])
-                    self.dados_pings[ip] = deque(antigo, maxlen=novo_tamanho)
-                    # Preenche com vazios se o novo tamanho for maior
-                    while len(self.dados_pings[ip]) < novo_tamanho:
-                        self.dados_pings[ip].appendleft((0, False))
+                    self.dados_pings[ip] = deque(list(self.dados_pings[ip]), maxlen=novo_tam)
                 self.atualizar_lista_graficos()
         except: pass
 
@@ -102,7 +96,6 @@ class AppRede(ctk.CTk):
                                  fg_color="#2a7a2a" if self.pausado else "#a33")
 
     def thread_pings(self):
-        """Thread focada apenas em colher os dados de latência"""
         while True:
             if not self.pausado:
                 for host in list(self.hosts):
@@ -111,38 +104,25 @@ class AppRede(ctk.CTk):
                         ms = ping(ip, timeout=0.8)
                         is_timeout = ms is None
                         latencia = ms * 1000 if not is_timeout else 0
-                        
-                        # Armazena o último resultado para o timer usar
                         host['ultima_latencia'] = (latencia, is_timeout)
-                        
-                        # Registro de Log
-                        if ip in self.widgets_graficos:
-                            status_antigo = self.widgets_graficos[ip]["ultimo_status"]
-                            if is_timeout and status_antigo:
-                                self.registrar_log(f"QUEDA: {host['nome']} ({ip})")
-                                self.widgets_graficos[ip]["ultimo_status"] = False
-                            elif not is_timeout and not status_antigo:
-                                self.registrar_log(f"VOLTOU: {host['nome']} ({ip})")
-                                self.widgets_graficos[ip]["ultimo_status"] = True
                     except: pass
             time.sleep(max(0.1, self.intervalo_ping))
 
     def thread_atualiza_grafico(self):
-        """Thread que faz o gráfico 'correr' a cada segundo, independente do ping ou pausa"""
         while True:
+            agora = time.time()
             for host in list(self.hosts):
                 ip = host["ip"]
-                # Pega o dado do ping ou coloca "0/False" se pausado
-                if not self.pausado:
-                    dado = host.get('ultima_latencia', (0, False))
-                else:
-                    dado = (0, False) # Gráfico anda reto quando pausado
-
+                dado_ping = host.get('ultima_latencia', (0, False))
+                # Se pausado, envia latência 0 mas mantém o tempo rodando
+                final_dado = (dado_ping[0] if not self.pausado else 0, 
+                              dado_ping[1] if not self.pausado else False, 
+                              agora)
+                
                 if ip in self.dados_pings:
-                    self.dados_pings[ip].append(dado)
-                    self.atualizar_widget_grafico(ip, dado)
-            
-            time.sleep(1) # O gráfico sempre corre a 1 segundo por ponto
+                    self.dados_pings[ip].append(final_dado)
+                    self.atualizar_widget_grafico(ip, final_dado)
+            time.sleep(1)
 
     def atualizar_widget_grafico(self, ip, ultimo_dado):
         if ip in self.widgets_graficos:
@@ -150,80 +130,62 @@ class AppRede(ctk.CTk):
             hist = list(self.dados_pings[ip])
             
             y_data = [d[0] for d in hist]
-            # Converte os timestamps (segundos) para objetos de data do matplotlib
             x_data = [datetime.fromtimestamp(d[2]) for d in hist]
             
-            # Atualiza os dados da linha
             w["line"].set_data(x_data, y_data)
             
-            # Ajusta Escala Y
+            # Ajuste dinâmico Y
             max_v = max(y_data) if any(y_data) else 50
             w["ax"].set_ylim(0, max_v * 1.2)
             
-            # Ajusta Eixo X (Tempo)
+            # Ajuste dinâmico X (Tempo)
             w["ax"].set_xlim(x_data[0], x_data[-1])
-            
-            # Formatação do Eixo X para mostrar Hora:Minuto:Segundo
             w["ax"].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
-            
-            # Reduz o número de marcações para não poluir
-            w["ax"].xaxis.set_major_locator(mdates.MaxNLocator(6)) 
+            w["ax"].xaxis.set_major_locator(mticker.MaxNLocator(6))
 
-            # Estatísticas
+            # Stats no Header
             validos = [d[0] for d in hist if not d[1] and d[0] > 0]
             if validos:
                 w["stats"].config(text=f"min: {min(validos):.1f} | max: {max(validos):.1f} | avg: {sum(validos)/len(validos):.1f}")
 
-            # Barras de Queda (vspans) baseadas no tempo
+            # Desenho das barras de Timeout (Vermelhas)
             for p in w["vspans"]: p.remove()
             w["vspans"] = []
             for i, (v, t, ts) in enumerate(hist):
                 if t:
                     dt = datetime.fromtimestamp(ts)
+                    # Barra vertical na posição exata do tempo
                     w["vspans"].append(w["ax"].axvspan(dt, dt, color='red', alpha=0.5))
             
-            # Título
             lat, timeout, _ = ultimo_dado
             nome_h = next((h['nome'] for h in self.hosts if h['ip'] == ip), "HOST")
+            
+            # Logs de Queda
+            if timeout and w["ultimo_status"]:
+                self.registrar_log(f"QUEDA: {nome_h} ({ip})")
+                w["ultimo_status"] = False
+            elif not timeout and not w["ultimo_status"]:
+                self.registrar_log(f"VOLTOU: {nome_h} ({ip})")
+                w["ultimo_status"] = True
+
             txt = f"{nome_h.upper()} ({ip}) | {lat:.1f} ms" if not timeout else f"🔴 {nome_h.upper()} ({ip}) | TIMEOUT"
             if self.pausado: txt = f"⏸ {nome_h.upper()} ({ip}) - PAUSADO"
             
             w["label"].config(text=txt, fg="#ff5555" if timeout else "white")
             w["canvas"].draw_idle()
 
-    def thread_atualiza_grafico(self):
-        while True:
-            agora = time.time()
-            for host in list(self.hosts):
-                ip = host["ip"]
-                if not self.pausado:
-                    # Pega a latência e o timeout e adiciona o tempo atual
-                    lat, tout = host.get('ultima_latencia', (0, False))
-                    dado = (lat, tout, agora)
-                else:
-                    dado = (0, False, agora)
-
-                if ip in self.dados_pings:
-                    self.dados_pings[ip].append(dado)
-                    self.atualizar_widget_grafico(ip, dado)
-            time.sleep(1)
-
     def atualizar_lista_graficos(self):
         for child in self.ips_pane.winfo_children(): child.destroy()
         self.widgets_graficos = {}
-        tamanho_pts = self.janela_minutos * 60
 
         for index, host in enumerate(self.hosts):
             ip, nome = host["ip"], host["nome"]
             container = tk.Frame(self.ips_pane, bg="#1e1e1e")
-            self.ips_pane.add(container, minsize=80, stretch="always")
+            self.ips_pane.add(container, minsize=115, stretch="always") 
 
-            header = tk.Frame(container, bg="#2b2b2b", height=30)
-            header.pack(fill="x")
+            header = tk.Frame(container, bg="#2b2b2b", height=30); header.pack(fill="x")
+            btn_f = tk.Frame(header, bg="#2b2b2b"); btn_f.pack(side="left", padx=5)
             
-            # Botoes de ordem
-            btn_f = tk.Frame(header, bg="#2b2b2b")
-            btn_f.pack(side="left", padx=5)
             if index > 0:
                 tk.Button(btn_f, text="▲", bg="#333", fg="white", font=("Arial", 7), command=lambda i=index: self.mover_host(i, -1), bd=0).pack(side="left", padx=1)
             if index < len(self.hosts)-1:
@@ -231,48 +193,61 @@ class AppRede(ctk.CTk):
 
             lbl_info = tk.Label(header, text=f"{nome.upper()} ({ip})", bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
             lbl_info.pack(side="left", padx=10)
-            
-            lbl_stats = tk.Label(header, text="min: - | max: - | avg: -", bg="#2b2b2b", fg="#aaa", font=("Consolas", 9))
-            lbl_stats.pack(side="left", padx=20)
-
+            lbl_stats = tk.Label(header, text="min: - | max: - | avg: -", bg="#2b2b2b", fg="#aaa", font=("Consolas", 9)); lbl_stats.pack(side="left", padx=20)
             tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i)).pack(side="right", padx=5)
 
+            # Matplotlib Figure
             fig, ax = plt.subplots()
             fig.patch.set_facecolor('#1e1e1e')
             ax.set_facecolor('#1e1e1e')
+            ax.grid(True, axis='y', color='#333', linestyle='--', linewidth=0.5)
             ax.tick_params(colors='gray', labelsize=8)
-            fig.subplots_adjust(left=0.03, right=0.99, top=1, bottom=0) 
             
-            line, = ax.step(range(tamanho_pts), [0]*tamanho_pts, color='#00d4ff', linewidth=1.5, zorder=2)
+            # Margens: Left=0.08 para ver os MS, Bottom=0.25 para ver as Horas
+            fig.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.25) 
+            
+            # Linha em estilo STEP (Degrau)
+            line, = ax.step([], [], color='#00d4ff', linewidth=1.5, zorder=2, where='post')
+            
             canvas = FigureCanvasTkAgg(fig, master=container)
             canvas.get_tk_widget().pack(fill="both", expand=True)
 
-            self.widgets_graficos[ip] = {"line": line, "ax": ax, "canvas": canvas, "label": lbl_info, "stats": lbl_stats, "vspans": [], "ultimo_status": True}
+            self.widgets_graficos[ip] = {
+                "line": line, "ax": ax, "canvas": canvas, "label": lbl_info, 
+                "stats": lbl_stats, "vspans": [], "ultimo_status": True
+            }
         self.rebalancear_graficos()
 
-    # --- Funções Auxiliares de Manutenção ---
     def mover_host(self, index, direcao):
         self.hosts[index], self.hosts[index+direcao] = self.hosts[index+direcao], self.hosts[index]
         self.salvar_hosts(); self.atualizar_lista_graficos()
 
     def registrar_log(self, mensagem):
-        with open(self.log_file, "a") as f:
-            f.write(f"[{datetime.now().strftime('%d/%m/%Y %H:%M:%S')}] {mensagem}\n")
+        try:
+            timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            with open(self.log_file, "a") as f: f.write(f"[{timestamp}] {mensagem}\n")
+        except: pass
 
     def carregar_hosts(self):
         if os.path.exists(self.config_file):
-            with open(self.config_file, "r") as f: return json.load(f)
+            try:
+                with open(self.config_file, "r") as f: return json.load(f)
+            except: pass
         return [{"ip": "8.8.8.8", "nome": "Google DNS"}]
 
     def salvar_hosts(self):
-        with open(self.config_file, "w") as f: json.dump(self.hosts, f)
+        try:
+            with open(self.config_file, "w") as f: json.dump(self.hosts, f)
+        except: pass
 
     def rebalancear_graficos(self):
         self.update_idletasks()
         h = self.ips_pane.winfo_height()
         if self.hosts:
             f = h // len(self.hosts)
-            for c in self.ips_pane.winfo_children(): self.ips_pane.paneconfig(c, height=f)
+            for c in self.ips_pane.winfo_children(): 
+                try: self.ips_pane.paneconfig(c, height=f)
+                except: pass
 
     def remover_host(self, ip):
         self.hosts = [h for h in self.hosts if h["ip"] != ip]
@@ -283,7 +258,7 @@ class AppRede(ctk.CTk):
         i = ctk.CTkInputDialog(text="IP:", title="Add").get_input()
         if n and i:
             self.hosts.append({"ip": i, "nome": n})
-            self.dados_pings[i] = deque([(0, False)] * (self.janela_minutos * 60), maxlen=(self.janela_minutos * 60))
+            self.dados_pings[i] = deque([(0, False, time.time())] * (self.janela_minutos * 60), maxlen=(self.janela_minutos * 60))
             self.salvar_hosts(); self.atualizar_lista_graficos()
 
     def iniciar_speedtest(self):
@@ -300,3 +275,4 @@ class AppRede(ctk.CTk):
 
 if __name__ == "__main__":
     AppRede().mainloop()
+
