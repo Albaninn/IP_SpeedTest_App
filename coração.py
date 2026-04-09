@@ -184,33 +184,37 @@ class AppRede(ctk.CTk):
             self.ips_pane.add(container, minsize=115, stretch="always") 
 
             header = tk.Frame(container, bg="#2b2b2b", height=30); header.pack(fill="x")
-        
-            btn_f = tk.Frame(header, bg="#2b2b2b"); btn_f.pack(side="left", padx=5)    
+            
+            # --- Botões de Ordem ---
+            btn_f = tk.Frame(header, bg="#2b2b2b"); btn_f.pack(side="left", padx=5)
             if index > 0:
-                tk.Button(btn_f, text="▲", bg="#333", fg="white", font=("Arial", 7), command=lambda i=index: self.mover_host(i, -1), bd=0).pack(side="left", padx=1)
+                tk.Button(btn_f, text="▲", bg="#333", fg="white", font=("Arial", 7), command=lambda i=index: self.mover_host(i, -1), bd=0, width=2).pack(side="left", padx=1)
             if index < len(self.hosts)-1:
-                tk.Button(btn_f, text="▼", bg="#333", fg="white", font=("Arial", 7), command=lambda i=index: self.mover_host(i, 1), bd=0).pack(side="left", padx=1)
+                tk.Button(btn_f, text="▼", bg="#333", fg="white", font=("Arial", 7), command=lambda i=index: self.mover_host(i, 1), bd=0, width=2).pack(side="left", padx=1)
 
+            # --- Nome do Host (Editável com Duplo Clique) ---
             texto_titulo = f"{nome.upper()} ({ip})"
-            lbl_info = tk.Label(header, text=texto_titulo, bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"))
+            lbl_info = tk.Label(header, text=texto_titulo, bg="#2b2b2b", fg="white", font=("Consolas", 10, "bold"), cursor="hand2")
             lbl_info.pack(side="left", padx=10)
+            
+            # VINCULANDO O DUPLO CLIQUE NOVAMENTE
             lbl_info.bind("<Double-Button-1>", lambda e, i=ip: self.editar_nome_host(i))
-            lbl_stats = tk.Label(header, text="min: - | max: - | avg: -", bg="#2b2b2b", fg="#aaa", font=("Consolas", 9)); lbl_stats.pack(side="left", padx=20)
-            tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i)).pack(side="right", padx=5)
 
-            # Matplotlib Figure
+            # --- Estatísticas ---
+            lbl_stats = tk.Label(header, text="min: - | max: - | avg: -", bg="#2b2b2b", fg="#aaa", font=("Consolas", 9))
+            lbl_stats.pack(side="left", padx=20)
+
+            # --- Botão Deletar ---
+            tk.Button(header, text="X", bg="#922", fg="white", bd=0, command=lambda i=ip: self.remover_host(i), width=3).pack(side="right", padx=5)
+
+            # --- Restante do Gráfico ---
             fig, ax = plt.subplots()
             fig.patch.set_facecolor('#1e1e1e')
             ax.set_facecolor('#1e1e1e')
             ax.grid(True, axis='y', color='#333', linestyle='--', linewidth=0.5)
             ax.tick_params(colors='gray', labelsize=8)
-            
-            # Margens: Left=0.08 para ver os MS, Bottom=0.25 para ver as Horas
             fig.subplots_adjust(left=0.08, right=0.98, top=0.92, bottom=0.25) 
-            
-            # Linha em estilo STEP (Degrau)
             line, = ax.step([], [], color='#00d4ff', linewidth=1.5, zorder=2, where='post')
-            
             canvas = FigureCanvasTkAgg(fig, master=container)
             canvas.get_tk_widget().pack(fill="both", expand=True)
 
@@ -219,6 +223,21 @@ class AppRede(ctk.CTk):
                 "stats": lbl_stats, "vspans": [], "ultimo_status": True
             }
         self.rebalancear_graficos()
+    
+    def editar_nome_host(self, ip):
+        """Abre uma caixa de diálogo para renomear o host"""
+        dialogo = ctk.CTkInputDialog(text="Digite o novo nome para este host:", title="Editar Nome")
+        novo_nome = dialogo.get_input()
+        
+        if novo_nome:
+            for h in self.hosts:
+                if h["ip"] == ip:
+                    h["nome"] = novo_nome
+                    break
+            
+            self.salvar_hosts()
+            # Atualiza a interface para refletir o novo nome imediatamente
+            self.atualizar_lista_graficos()
 
     def mover_host(self, index, direcao):
         self.hosts[index], self.hosts[index+direcao] = self.hosts[index+direcao], self.hosts[index]
